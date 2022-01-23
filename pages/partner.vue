@@ -52,6 +52,8 @@ export default {
         endTime: "",
       },
       tableData: [],
+      latestTickId: 0,
+      messageRxd: "",
     };
   },
   mounted() {
@@ -62,6 +64,7 @@ export default {
       this.getUserInfo();
       await this.getConfig();
       await this.getMeetings();
+      this.initSocketIO();
     },
     async getUserInfo() {
       //   const user = await this.$fire.auth.currentUser;
@@ -80,15 +83,13 @@ export default {
     },
     // 获取已经当前人已经预约的时间表
     async getMeetings() {
-      console.log("this.user.email", this.user.email);
-      console.log("this.date", this.$dayjs(this.date).format("YYYY/MM/DD"));
-
       const meetingsRef = await this.$fire.firestore
         .collection("meetings")
         .where("partner", "==", this.user.email)
         .where("date", "==", this.$dayjs(this.date).format("YYYY/MM/DD"))
         .get();
       const meetings = meetingsRef.docs.map((doc) => doc.data());
+      console.log("获取会议数据", meetings);
       this.initTable(meetings);
     },
     // 生成预约数据
@@ -119,16 +120,17 @@ export default {
       }).then(() => {
         // 提交数据到firebase 预约表
         const date = this.$dayjs(this.date).format("YYYY/MM/DD");
-
+        const data = {
+          date,
+          timeRange: row.timeRange,
+          partner: this.user.email,
+        };
         this.$fire.firestore
           .collection("meetings")
-          .add({
-            date,
-            timeRange: row.timeRange,
-            partner: this.user.email,
-          })
+          .add(data)
           .then((res) => {
             console.log(res);
+            this.sendMsg("partner-order", data);
             this.$message({
               type: "success",
               message: "预约成功",
@@ -151,24 +153,80 @@ export default {
         confirmButtonText: "确定",
         cancelButtonText: "取消",
         type: "warning",
-      }).then(() => {
-        this.$fire.firestore
+      }).then(async () => {
+        const data = {
+          date: this.$dayjs(this.date).format("YYYY/MM/DD"),
+          timeRange: row.timeRange,
+          partner: this.user.email,
+        };
+        // this.$fire.firestore
+        //   .collection("meetings")
+        //   .where("partner", "==", data.partner)
+        //   .where("date", "==", data.date)
+        //   .where("timeRange", "==", data.timeRange)
+        //   .get()
+        //   .then((res) => {
+        //     res.docs.forEach((doc) => {
+        //       doc.ref.delete();
+        //       this.sendMsg("partner-cancel-order", data);
+        //       this.getMeetings();
+        //     });
+
+        //     this.$message({
+        //       type: "success",
+        //       message: "取消成功",
+        //     });
+        //   });
+
+        const refs = await this.$fire.firestore
           .collection("meetings")
-          .where("partner", "==", this.user.email)
-          .where("date", "==", this.$dayjs(this.date).format("YYYY/MM/DD"))
-          .where("timeRange", "==", row.timeRange)
-          .get()
-          .then((res) => {
-            res.docs.forEach((doc) => {
-              doc.ref.delete();
-            });
-            this.$message({
-              type: "success",
-              message: "取消成功",
-            });
-            this.getMeetings();
-          });
+          .where("partner", "==", data.partner)
+          .where("date", "==", data.date)
+          .where("timeRange", "==", data.timeRange)
+          .get();
+
+        await Promise.all(
+          refs.docs.map(async (doc) => {
+            await doc.ref.delete();
+          })
+        );
+
+        this.sendMsg("partner-cancel-order", data);
+        this.getMeetings();
+
+        this.$message({
+          type: "success",
+          message: "取消成功",
+        });
       });
+    },
+    // 连接socket.io
+    initSocketIO() {
+      // use "main" socket defined in nuxt.config.js
+      this.socket = this.$nuxtSocket({
+        name: "main", // select "main" socket from nuxt.config.js - we could also skip this because "main" is the default socket
+      });
+
+      this.socket.on("partner-order", (data) => {
+        console.log("partner-order", data);
+        const { partner } = data;
+        if (partner === this.user.email) {
+          this.getMeetings();
+        }
+      });
+
+      this.socket.on("partner-cancel-order", (data) => {
+        console.log("partner-cancel-order", data);
+        const { partner } = data;
+        if (partner === this.user.email) {
+          console.log(99);
+          this.getMeetings();
+        }
+      });
+    },
+
+    sendMsg(eventName, data) {
+      this.socket.emit(eventName, data);
     },
   },
 };

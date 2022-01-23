@@ -54,13 +54,27 @@ export default {
     login() {
       this.$fire.auth
         .signInWithEmailAndPassword(this.form.email, "Asdf.1234")
-        .then((res) => {
+        .then(async (res) => {
           localStorage.setItem("user", JSON.stringify(res.user));
-          this.$router.push("/partner");
+          const user = await this.getUserInfo();
+          if (user.role === 0) {
+            this.$router.push("/enterpriser");
+          } else {
+            this.$router.push("/partner");
+          }
         })
         .catch((e) => {
           console.log(e);
         });
+    },
+    async getUserInfo() {
+      const userRef = await this.$fire.firestore.collection("users").get();
+      const user = userRef.docs.filter((doc) => {
+        const data = doc.data();
+        return data.email === this.form.email;
+      });
+      const userArr = user.map((doc) => doc.data());
+      return userArr[0];
     },
   },
 };
