@@ -55,7 +55,8 @@ export default {
           realtimeDb: true
         }
       }
-    ]
+    ],
+    '@nuxtjs/dayjs',
   ],
 
   // Build Configuration: https://go.nuxtjs.dev/config-build
